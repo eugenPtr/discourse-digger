@@ -1,1 +1,4 @@
 prisma
+axiom-py
+asyncio
+python-dotenv

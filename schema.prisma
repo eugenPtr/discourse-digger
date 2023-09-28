@@ -10,11 +10,46 @@ generator db {
   recursive_type_depth = 5
 }
 
+model Dao {
+  id         String   @id @default(cuid())
+  name       String
+  discourseUsername String
+  discourseApiKey String
+  posts      Post[]
+  topics     Topic[]
+  proposals  Proposal[]
+}
+
+model Topic {
+  id         String   @id @default(cuid())
+  discourseId Int
+  createdAt  DateTime
+  title     String
+  body    String
+  views     Int
+  daoId      String
+  dao        Dao      @relation(fields: [daoId], references: [id])
+  @@unique([daoId, discourseId])
+}
+
 model Post {
   id         String   @id @default(cuid())
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
-  title      String
-  published  Boolean
-  desc       String?
+  discourseId Int
+  topicDiscourseId Int
+  author     String
+  createdAt  DateTime
+  body       String
+  views      Int
+  daoId      String
+  dao        Dao      @relation(fields: [daoId], references: [id])
+  @@unique([daoId, discourseId])
+}
+
+model Proposal {
+  id  String @id @default(cuid())
+  title String
+  body String
+  discourseId Int //This is the discourseId of the Topic
+  daoId String
+  dao Dao @relation(fields: [daoId], references: [id])
 }
