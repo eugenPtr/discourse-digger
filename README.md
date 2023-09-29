@@ -34,7 +34,7 @@ The current implementation prioritizes robustness over speed. In case a spontane
 
 Another advantage of this approach is that we can reset the pagination index back to 1 if we want to update all the posts with the latest edits, number of views, etc.
 
-In order to speed up bootstraping the discord data for a DAO, an alternative approach could be used. By fetching posts in reverse chronological order and storing data in batches could reduce the bootstrapping time required for Aave (one of the DAOs with the highest activity on Discourse) to 20 minutes.
+In order to speed up bootstraping the discord data for a DAO, an alternative approach could be used. By fetching posts in reverse chronological order and storing data in batches could reduce the bootstrapping time required for Aave (one of the DAOs with the highest activity on Discourse) to 20 minutes down from 1 hour.
 
 The two implementations could go hand in hand: the latter could be run on demand to rebuild the db from scratch / add data for a new DAO, while the former could continously run in production to fetch the latest data in a reliable manner.
 
