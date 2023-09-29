@@ -54,9 +54,9 @@ async def insert_or_update_posts(db: Prisma, posts: List[Dict[str, Any]] , dao: 
     logger.info('Inserted or Updated ' + str(modified_rows) + ' rows in the db')
     return modified_rows
 
-def fetch_discourse_posts(discourse_api_key: str, discourse_username: str, dao: Dao) -> List[Dict[str, Any]]:
+def fetch_discourse_posts(discourse_api_key: str, discourse_username: str, api_base_url: str, pagination_index: str) -> List[Dict[str, Any]]:
     response = requests.get(
-        dao.apiBaseUrl + '/posts.json?before=' + str(dao.paginationIndex), 
+        api_base_url + '/posts.json?before=' + pagination_index, 
         headers={
             'User-Api-Key': discourse_api_key,
             'Api-Username': discourse_username
@@ -84,10 +84,10 @@ async def main() -> None:
 
         # Fetch up to 20 results at a time (this is the API limit) in chronological order, starting from the last pagination index stored in the db
         # The loop stops when the same data gets fetched over multiple consecutive iterations
-        while (no_new_data_count < 5):
+        while (no_new_data_count < 10):
             logger.info("Pagination index: " + str(pagination_index))
 
-            posts = fetch_discourse_posts(str(dao.discourseApiKey), str(dao.discourseUsername), dao)
+            posts = fetch_discourse_posts(str(dao.discourseApiKey), str(dao.discourseUsername), str(dao.apiBaseUrl), str(pagination_index))
 
             if (posts == old_posts):
                 no_new_data_count += 1

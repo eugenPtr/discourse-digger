@@ -1,8 +1,7 @@
-prisma
+prisma=4.15.0
 asyncio
 python-dotenv
 requests
-logging
 typing
 pyright
 
