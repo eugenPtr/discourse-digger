@@ -12,9 +12,11 @@ generator db {
 
 model Dao {
   id         String   @id @default(cuid())
-  name       String
+  name       String   @unique
   discourseUsername String
-  discourseApiKey String
+  discourseApiKey String  //Assumption: The API key grants only read access.
+  paginationIndex Int @default(1)
+  apiBaseUrl String
   posts      Post[]
   topics     Topic[]
   proposals  Proposal[]

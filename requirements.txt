@@ -1,4 +1,8 @@
 prisma
-axiom-py
 asyncio
 python-dotenv
+requests
+logging
+typing
+pyright
+

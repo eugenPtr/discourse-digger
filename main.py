@@ -1,12 +1,26 @@
 import asyncio
 from prisma import Prisma
 import requests
-import json
-import os
-import sys
 from dotenv import load_dotenv
 from prisma.models import Dao
 from typing import List, Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Set the logging level
+logger.setLevel(logging.INFO)
+
+# Create a console handler and set its level
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+
+# Create a formatter and add it to the console handler
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(formatter)
+
+# Add the console handler to the logger
+logger.addHandler(console_handler)
 
 load_dotenv()
 
@@ -30,13 +44,30 @@ async def insert_or_update_posts(db: Prisma, posts: List[Dict[str, Any]] , dao: 
                     'views': post['reads'],
                     'dao': {'connect': {'id': dao.id}}},
                 'update': {
-                    #Insert any fields that need to be updated here
+                    #Insert here any fields you want to be updated
                     'views': post['reads']
                 }
             } 
         )
         modified_rows += 1
+
+    logger.info('Inserted or Updated ' + str(modified_rows) + ' rows in the db')
     return modified_rows
+
+def fetch_discourse_posts(discourse_api_key: str, discourse_username: str, dao: Dao) -> List[Dict[str, Any]]:
+    response = requests.get(
+        dao.apiBaseUrl + '/posts.json?before=' + str(dao.paginationIndex), 
+        headers={
+            'User-Api-Key': discourse_api_key,
+            'Api-Username': discourse_username
+        }
+    )
+    posts = response.json()['latest_posts']
+    logger.info('Fetched ' + str(len(posts)) + ' posts')
+    if (len(posts) > 0):
+        logger.info('Post ids are between ' + str(posts[-1]['id']) + ' and ' + str(posts[0]['id']))
+
+    return posts
 
 async def main() -> None:
     db = Prisma()
@@ -45,32 +76,34 @@ async def main() -> None:
     daos = await db.dao.find_many()
     # Add to the database all posts that are not already in there
     for dao in daos:
-        print('Updating discourse data for dao: ' + dao.name)
+        logger.info('Updating discourse data for dao: ' + dao.name)
 
-        latest_post_in_db = await db.post.find_first(order={'discourseId': 'desc'})
-        latest_post_discourse_id = 0 if latest_post_in_db == None else latest_post_in_db.discourseId
+        pagination_index = dao.paginationIndex
+        no_new_data_count = 0
+        old_posts = []
 
-        headers = {
-        'User-Api-Key': str(dao.discourseApiKey),
-        'Api-Username': str(dao.discourseUsername)
-        }
-        response = requests.get('https://governance.aave.com/posts.json', headers=headers)
-        posts = response.json()['latest_posts']
-        modified_rows = await insert_or_update_posts(db, posts, dao)
-        
-        print("Latest post id fetched from discourse:" + str(posts[0]['id']))
-        before_query_param = posts[len(posts)-1]['id'] - 1
+        # Fetch up to 20 results at a time (this is the API limit) in chronological order, starting from the last pagination index stored in the db
+        # The loop stops when the same data gets fetched over multiple consecutive iterations
+        while (no_new_data_count < 5):
+            logger.info("Pagination index: " + str(pagination_index))
 
-        # Fetch all posts until reaching the latest post in the database or until there are no more posts
-        while latest_post_discourse_id < before_query_param and len(posts) > 0:
-            print("Fetched " + str(len(posts)) + " posts")
-            print("Modified " + str(modified_rows) + " rows");
-            print("Before query param: " + str(before_query_param))
-            response = requests.get('https://governance.aave.com/posts.json?before=' + str(before_query_param), headers=headers)
-            posts = response.json()['latest_posts']
-            modified_rows = await insert_or_update_posts(db, posts, dao)
+            posts = fetch_discourse_posts(str(dao.discourseApiKey), str(dao.discourseUsername), dao)
+
+            if (posts == old_posts):
+                no_new_data_count += 1
+            else:
+                no_new_data_count = 0
+
+            # TODO: If insert_or_update_posts throws an error, break out of the loop
+            await insert_or_update_posts(db, posts, dao)
+
+            old_posts = posts
+            pagination_index += 20
+
+            # Updating the pagination index in the database on each iteration enables resuming the script from where it left off in case of an error
+            await db.dao.update(where={'id': dao.id}, data={'paginationIndex': pagination_index})
             
-            before_query_param = posts[len(posts)-1]['id'] - 1
+            logger.info('\n')
 
     await db.disconnect()
     
