@@ -28,7 +28,7 @@ Until the MVP stage is reached, the database is likely to suffer plenty of chang
 
 The main script (`main.py`) was able to fetch and store all the posts from Aave's Discourse (around 30k posts on Sept 29th 2023) in around 1 hour, costing less than $0.50. The test was made having deployed a Postgresql db and the script to Railway.
 
-The current implementation prioritizes robustness over speed. In case a spontaneous error arises during execution, it is able to resume fetching data in the next run of the cron job, without skipping any of it. To facilitate this, posts are fetched in chronological order and a pagination index is maintained in the database.
+The current implementation prioritizes robustness over speed. In case a spontaneous error arises during execution, it is able to resume fetching data from where it left off in the next execution of the cron job. To facilitate this, posts are fetched in chronological order and a pagination index is maintained in the database.
 
 > Design choice 1: Fetch and store posts in chronological order, maintaining a pagination index in the database, in order to overcome database or API failures.
 
