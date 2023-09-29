@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from prisma.models import Dao
 from typing import List, Dict, Any
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -24,88 +25,114 @@ logger.addHandler(console_handler)
 
 load_dotenv()
 
-async def insert_or_update_posts(db: Prisma, posts: List[Dict[str, Any]] , dao: Dao) -> int:
-    modified_rows = 0
-    for post in posts:
-        await db.post.upsert(
-            where={
-                'daoId_discourseId': {
-                    'daoId': dao.id,
-                    'discourseId': post['id']
+async def insert_or_update_posts(db: Prisma, posts: List[Dict[str, Any]], dao: Dao) -> int:
+    try:
+        modified_rows_count = 0
+        for post in posts:
+            await db.post.upsert(
+                where={
+                    'daoId_discourseId': {
+                        'daoId': dao.id,
+                        'discourseId': post['id']
+                    }
+                },
+                data={
+                    'create': {
+                        'body': post['raw'],
+                        'discourseId': post['id'],
+                        'topicDiscourseId': post['topic_id'],
+                        'author': post['username'],
+                        'createdAt': post['created_at'],
+                        'views': post['reads'],
+                        'dao': {'connect': {'id': dao.id}}},
+                    'update': {
+                        # Insert here any fields you want to be updated
+                        'body': post['raw'],
+                        'views': post['reads']
+                    }
                 }
-            },
-            data={
-                'create': {
-                    'body': post['raw'],
-                    'discourseId': post['id'],
-                    'topicDiscourseId': post['topic_id'],
-                    'author': post['username'],
-                    'createdAt': post['created_at'],
-                    'views': post['reads'],
-                    'dao': {'connect': {'id': dao.id}}},
-                'update': {
-                    #Insert here any fields you want to be updated
-                    'views': post['reads']
-                }
-            } 
-        )
-        modified_rows += 1
+            )
+            modified_rows_count += 1
 
-    logger.info('Inserted or Updated ' + str(modified_rows) + ' rows in the db')
-    return modified_rows
+        logger.info('Inserted or Updated ' + str(modified_rows_count) + ' rows in the db')
+        return modified_rows_count
+    except Exception as e:
+        logger.error(f'Error while inserting/updating posts: {str(e)}')
+        raise e
+
+    
 
 def fetch_discourse_posts(discourse_api_key: str, discourse_username: str, api_base_url: str, pagination_index: str) -> List[Dict[str, Any]]:
-    response = requests.get(
-        api_base_url + '/posts.json?before=' + pagination_index, 
-        headers={
-            'User-Api-Key': discourse_api_key,
-            'Api-Username': discourse_username
-        }
-    )
-    posts = response.json()['latest_posts']
-    logger.info('Fetched ' + str(len(posts)) + ' posts')
-    if (len(posts) > 0):
-        logger.info('Post ids are between ' + str(posts[-1]['id']) + ' and ' + str(posts[0]['id']))
+    try:
+        response = requests.get(
+            api_base_url + '/posts.json?before=' + pagination_index,
+            headers={
+                'User-Api-Key': discourse_api_key,
+                'Api-Username': discourse_username
+            }
+        )
+        response.raise_for_status()  # Raise an exception if the response status code indicates an error
 
-    return posts
+        posts = response.json()['latest_posts']
+        logger.info('Fetched ' + str(len(posts)) + ' posts')
+        if len(posts) > 0:
+            logger.info('Post ids are between ' + str(posts[-1]['id']) + ' and ' + str(posts[0]['id']))
+
+        return posts
+    except requests.exceptions.RequestException as e:
+        logger.error(f'Error while fetching discourse posts: {str(e)}')
+        raise e
 
 async def main() -> None:
     db = Prisma()
-    await db.connect()
 
-    daos = await db.dao.find_many()
-    # Add to the database all posts that are not already in there
-    for dao in daos:
-        logger.info('Updating discourse data for dao: ' + dao.name)
+    ## The code below should be included in a cron job that runs every X minutes / hours.
+    ## If an exception is thrown, the cron job will be executed again later and resume from where it left off.
+    try:
+        await db.connect()
 
-        pagination_index = dao.paginationIndex
-        no_new_data_count = 0
-        old_posts = []
+        logger.info('Starting to fetch discourse data...')
 
-        # Fetch up to 20 results at a time (this is the API limit) in chronological order, starting from the last pagination index stored in the db
-        # The loop stops when the same data gets fetched over multiple consecutive iterations
-        while (no_new_data_count < 10):
-            logger.info("Pagination index: " + str(pagination_index))
+        daos = await db.dao.find_many()
+        for dao in daos:
+            logger.info('Updating discourse data for dao: ' + dao.name)
 
-            posts = fetch_discourse_posts(str(dao.discourseApiKey), str(dao.discourseUsername), str(dao.apiBaseUrl), str(pagination_index))
+            pagination_index = dao.paginationIndex
+            no_new_data_count = 0
+            old_posts = []
 
-            if (posts == old_posts):
-                no_new_data_count += 1
-            else:
-                no_new_data_count = 0
+            # Fetch up to 30 results at a time (this is the API limit) in chronological order, starting from the last pagination index stored in the db
+            # The loop stops when the same data gets fetched over multiple consecutive iterations.
+            while no_new_data_count < 5:
+                logger.info("Pagination index: " + str(pagination_index)) # This is useful for debugging
 
-            # TODO: If insert_or_update_posts throws an error, break out of the loop
-            await insert_or_update_posts(db, posts, dao)
+                # Fetch posts with id < pagination_index
+                posts = fetch_discourse_posts(str(dao.discourseApiKey), str(dao.discourseUsername), str(dao.apiBaseUrl), str(pagination_index))
 
-            old_posts = posts
-            pagination_index += 20
+                if posts == old_posts:
+                    no_new_data_count += 1
+                else:
+                    no_new_data_count = 0
 
-            # Updating the pagination index in the database on each iteration enables resuming the script from where it left off in case of an error
-            await db.dao.update(where={'id': dao.id}, data={'paginationIndex': pagination_index})
-            
-            logger.info('\n')
+                # Insert new posts or update existing ones
+                await insert_or_update_posts(db, posts, dao)
 
-    await db.disconnect()
-    
+                old_posts = posts
+                pagination_index += 30
+
+                logger.info('\n')
+
+                # Update the pagination index in the db. This is useful in case the script crashes and needs to be restarted.
+                await db.dao.update(where={'id': dao.id}, data={'paginationIndex': pagination_index})
+
+                # This is a safeguard to avoid overloading the database if we need to store a lot of data at once
+                time.sleep(3)
+        
+        logger.info('Fetching discourse data finished successfully!')
+    except Exception as e:
+        logger.error(f'Error in main function: {str(e)}')
+    finally:
+        await db.disconnect()
+
 if __name__ == '__main__':
     asyncio.run(main())

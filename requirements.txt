@@ -1,7 +1,6 @@
-prisma=4.15.0
+prisma
 asyncio
 python-dotenv
 requests
 typing
 pyright
-

@@ -13,6 +13,9 @@ RUN prisma generate
 
 # Copy the rest of the application code into the container
 COPY main.py .
+COPY pyproject.toml .
+
+RUN pyright
 
 # Run the command to start the application
 CMD ["python", "main.py"]
