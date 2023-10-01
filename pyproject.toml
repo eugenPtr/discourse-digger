@@ -1,8 +1,6 @@
 [tool.pyright]
 include = [
-    "main.py",
-    "implementation_1.py",
-    "implementation_2.py"
+    "src/cronjob.py"
 ]
 
 typeCheckingMode = "strict"

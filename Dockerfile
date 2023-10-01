@@ -4,18 +4,17 @@ FROM python:3.11.5-bookworm
 # Set the working directory
 WORKDIR /
 
-# Copy the requirements file into the container and install dependencies
+# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY schema.prisma .
-RUN prisma generate
-
 # Copy the rest of the application code into the container
-COPY main.py .
 COPY pyproject.toml .
+COPY schema.prisma .
+COPY src/utils/initialize_db.py .
 
-RUN pyright
+COPY src/cronjob.py .
 
-# Run the command to start the application
-CMD ["python", "main.py"]
+
+# Run the initialization script followed by the main application
+CMD ["sh", "-c", "prisma db push && pyright && python initialize_db.py && python cronjob.py"]

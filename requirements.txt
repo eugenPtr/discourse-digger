@@ -1,6 +1,6 @@
 prisma
-asyncio
 python-dotenv
 requests
 typing
 pyright
+schedule

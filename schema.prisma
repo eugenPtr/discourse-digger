@@ -6,7 +6,7 @@ datasource db {
 
 generator db {
   provider             = "prisma-client-py"
-  interface            = "asyncio"
+  interface            = "sync"
   recursive_type_depth = 5
 }
 
@@ -15,7 +15,7 @@ model Dao {
   name       String   @unique
   discourseUsername String
   discourseApiKey String  //Assumption: The API key grants only read access.
-  paginationIndex Int @default(1)
+  lastProcessedPostId Int @default(1)
   apiBaseUrl String
   posts      Post[]
   topics     Topic[]
