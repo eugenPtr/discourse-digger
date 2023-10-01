@@ -1,6 +1,32 @@
 # discourse-digger
 
-Discourse digger is a script which fetches discourse posts for multiple DAOs and stores them in a database
+Discourse digger is a script which fetches discourse posts for multiple DAOs and stores them in a database.
+
+This repo contains two different implementations which can be used for different purposes.
+
+The performance of both implementations has been tested by deploying a PostgreSQL db and the two scripts to the cloud, then observing the time needed to fetch and store data from Aave's discourse.
+
+#### `implementation_1.py`
+
+This approach fetches all posts from newest to oldest, storing them in the database in batches.
+
+This version is suitable for fetching all posts from a discourse forum when bootstrapping and empty database or when integrating a new discourse forum.
+
+>Test result: Going over 5000 ids in 7 minutes -> 30k-ish ids (Aave's whole forum) in 42 minutes
+
+A future improvement could be running multiple instances of this script in parallel, each one fetching a different range of ids.
+
+#### `implementation_2.py`
+
+This approach maintains the latest pagination index in the database, enabling fetching data in chronological order (that is from oldest to newest). 
+
+Although slower than the other approach, this one is more robust and is suitable to run as a cron job in production.
+
+In the event of runtime errors, this implementation is able to resume fetching data from where it left off when the cron job will run next.
+
+Another advantage is that it enables syncing our db to the latest state of the Discourse data. Why would that be needed? Let's say we want to know the latest figures of when a post has been liked or quoted. To achieve this we simply need to set the pagination index to a lower value.
+
+> Test result: Going over 5000 ids in 10 minutes -> 30k-ish ids (Aave's whole forum) in 60 minutes
 
 ### Prerequisites
 - Create an account on the discourse server you want to fetch data from
@@ -17,30 +43,17 @@ https://observablehq.com/@beanow/generate-user-api-key-for-discourse
 
 ### How to run
 - You can use `pyright` to run a static type check
-- Run `main.py` to start fetching posts from discourse
+- Run either `python3 implementation_1.py` or `python3 implementation_2.py` to start fetching posts from discourse
+- If you'd like to deploy any of the two implementations to a server / cloud platform using Docker, copy the desired implementation into `main.py` for the Docker image to be created
 
 ### Assumptions and design decisions
 This script is meant to gather data which would be later manipulated by a data analyst. 
 
 >Assumption 1: The data analyst might want to include new data points in the future, therefore the database might need to be extended and/or rebuilt from scratch.
 
-Until the MVP stage is reached, the database is likely to suffer plenty of changes. For this reason it's important to be able to rebuild it from scratch fast and cheap.
-
-The main script (`main.py`) was able to fetch and store all the posts from Aave's Discourse (around 30k posts on Sept 29th 2023) in around 1 hour, costing less than $0.50. The test was made having deployed a Postgresql db and the script to Railway.
-
-The current implementation prioritizes robustness over speed. In case a spontaneous error arises during execution, it is able to resume fetching data in the next run of the cron job, without skipping any of it. To facilitate this, posts are fetched in chronological order and a pagination index is maintained in the database.
-
-> Design choice 1: Fetch and store posts in chronological order, maintaining a pagination index in the database, in order to overcome database or API failures.
-
-Another advantage of this approach is that we can reset the pagination index back to 1 if we want to update all the posts with the latest edits, number of views, etc.
-
-In order to speed up bootstraping the discord data for a DAO, an alternative approach could be used. By fetching posts in reverse chronological order and storing data in batches could reduce the bootstrapping time required for Aave (one of the DAOs with the highest activity on Discourse) to 20 minutes.
-
-The two implementations could go hand in hand: the latter could be run on demand to rebuild the db from scratch / add data for a new DAO, while the former could continously run in production to fetch the latest data in a reliable manner.
+Until the MVP stage is reached, the database is likely to suffer plenty of structural changes. For this reason it's important to be able to rebuild it from scratch fast and cheap.
 
 > Assumption 2: Discourse API keys authorize read-only access. Assuming this, the API key for each DAO is stored in the database in plain text.
-
-
 
 
 ### Scalability, extensions and improvements
@@ -49,10 +62,17 @@ The two implementations could go hand in hand: the latter could be run on demand
 - The database structure allows integrating multiple DAOs and extending the dataset to include other Discourse data, such as topics, or onchain/Snapshot governance data. Posts, Topics and Proposals can be easily linked through the unique composite field daoId_topicId which can be referenced by each table.
 
 2. Logging and Alerts
-- In the future, all the logging data could be consumed by services like Axiom, which facilitate tracing errors and setting up alerts through webhooks for critical events you'd want to know about as soon as they occur.
+- In the future, services like Axiom could process all logging data. They make it easier to trace errors and set up instant alerts for crucial events through webhooks.
 
 3. Scheduling
-- Although this isn't included in the script, a sensible next step would be to schedule these tasks to run every X minutes / hours
+- A sensible next step would be to make implementation_2.py part of a cron job that would run every X minutes/hours
+
+4. Readability, code structure and naming consistency
+- You might notice that both implementations use the same function to fetch posts from discourse. This should be extracted into a separate module to remove code duplication
+- Another aspect is that the pagination_index and before_query_parameter refer to the same thing. This was me playing with different names in different scripts and a future version should use consistent naming. 
+- The variable names and overall code readability can and should be improved. Although this time I chose to focus on implementing and testing different algorithms that get the job done efficiently, I value code cleanliness a lot and I am not satisfied with the current looks of it.
+
+
 
 
 
